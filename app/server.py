@@ -22,8 +22,9 @@ from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from PIL import Image, ImageOps
 
+from accidentals import add_accidentals
 from beaming import add_beams
-from fingering import TRANSPOSE, annotate_musicxml
+from fingering import FINGERINGS, TRANSPOSE, annotate_musicxml, name_of
 from pieces import split_pieces
 
 HERE = Path(__file__).parent
@@ -54,9 +55,10 @@ def recognize(image: Path) -> list[str]:
 
 
 def tidy(xml_text: str) -> str:
-    """Beam the short notes and name the part for trumpet instead of 'Voice'."""
+    """Beam the short notes, mark accidentals, and name the part for trumpet."""
     root = ET.fromstring(xml_text)
     add_beams(root)
+    add_accidentals(root)
     for name in root.iter("part-name"):
         name.text = ""
     for name in root.iter("instrument-name"):
@@ -80,6 +82,43 @@ def render_svg(xml_text: str) -> list[str]:
     })
     tk.loadData(xml_text)
     return [tk.renderToSVG(p) for p in range(1, tk.getPageCount() + 1)]
+
+
+def note_svg(midi: int) -> str:
+    """One whole note on a treble staff, all drawn at the same size."""
+    name = name_of(midi)
+    letter, octave = name[0], int(name[-1])
+    accidental = {"#": "^", "b": "_"}.get(name[1:-1], "")
+    abc = accidental + (letter.lower() if octave >= 5 else letter) + "'" * max(0, octave - 5) + "," * max(0, 4 - octave)
+    tk = verovio.toolkit(False)
+    tk.setResourcePath(str(Path(verovio.__file__).parent / "data"))
+    tk.setOptions({
+        "inputFrom": "abc",
+        "adjustPageWidth": True,
+        "pageHeight": 270,  # fixed, so every staff in the chart lines up
+        "pageMarginTop": 60,
+        "pageMarginBottom": 0,
+        "pageMarginLeft": 20,
+        "pageMarginRight": 20,
+        "scale": 100,
+        "header": "none",
+        "footer": "none",
+        "svgViewBox": True,
+    })
+    tk.loadData(f"X:1\nT:\nL:1\nK:C\n{abc}|\n")
+    return tk.renderToSVG(1)
+
+
+_chart = None
+
+
+@app.get("/api/chart")
+def chart():
+    """The fingering chart: note name, fingering and the note on a staff."""
+    global _chart
+    if _chart is None:
+        _chart = [{"note": name_of(m), "fingering": f, "svg": note_svg(m)} for m, f in sorted(FINGERINGS.items())]
+    return _chart
 
 
 # Jobs run in the background and the browser polls for the result, so a slow

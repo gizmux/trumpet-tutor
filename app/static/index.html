@@ -22,8 +22,9 @@
   .status { color: var(--muted); }
   .error { color: var(--warn); }
   .score svg { width: 100%; height: auto; }
-  .legend { display: grid; grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); gap: 8px; font-size: 14px; }
-  .legend div { border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; text-align: center; }
+  .legend { display: grid; grid-template-columns: repeat(auto-fill, minmax(128px, 1fr)); gap: 8px; font-size: 15px; }
+  .legend .staff > svg { width: 100%; height: 104px; display: block; margin: 2px 0; }
+  .legend > div { border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; text-align: center; }
   .legend b { display: block; font-size: 18px; }
   .warn { color: var(--warn); font-size: 14px; }
   .pick { display: flex; gap: 6px; align-items: center; }
@@ -179,15 +180,12 @@ function escapeHtml(text) {
   return div.innerHTML;
 }
 
-// Fingering chart for the legend (written pitch, B-flat trumpet).
-const chart = [
-  ['F♯3','123'],['G3','13'],['A♭3','23'],['A3','12'],['B♭3','1'],['B3','2'],['C4','0'],
-  ['C♯4','123'],['D4','13'],['E♭4','23'],['E4','12'],['F4','1'],['F♯4','2'],['G4','0'],
-  ['A♭4','23'],['A4','12'],['B♭4','1'],['B4','2'],['C5','0'],['C♯5','12'],['D5','1'],
-  ['E♭5','2'],['E5','0'],['F5','1'],['F♯5','2'],['G5','0'],['A♭5','23'],['A5','12'],
-  ['B♭5','1'],['B5','2'],['C6','0'],
-];
-$('legend').innerHTML = chart.map(([n, f]) => `<div>${n}<b>${f}</b></div>`).join('');
+// Fingering chart: each note's name, where it sits on the staff, and its valves.
+const pretty = name => name.replace('#', '♯').replace(/([A-G])b/, '$1♭');
+fetch('/api/chart').then(r => r.json()).then(chart => {
+  $('legend').innerHTML = chart.map(c =>
+    `<div><span>${pretty(c.note)}</span><div class="staff">${c.svg}</div><b>${c.fingering}</b></div>`).join('');
+}).catch(() => { $('legend').textContent = 'The fingering chart could not be loaded.'; });
 </script>
 </body>
 </html>
