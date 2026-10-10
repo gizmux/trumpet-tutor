@@ -22,7 +22,9 @@
   .status { color: var(--muted); }
   .error { color: var(--warn); }
   .score svg { width: 100%; height: auto; }
-  .legend { display: grid; grid-template-columns: repeat(auto-fill, minmax(128px, 1fr)); gap: 8px; font-size: 15px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 8px; font-size: 15px; }
+  .legend > div { flex: 1 1 128px; max-width: 200px; }
+  .legend > .pair { flex-basis: 264px; max-width: 400px; }
   .legend .staff > svg { width: 100%; height: 104px; display: block; margin: 2px 0; }
   .legend > div { border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; text-align: center; }
   .legend b { display: block; font-size: 18px; }
@@ -184,7 +186,7 @@ function escapeHtml(text) {
 const pretty = name => name.replace('#', '♯').replace(/([A-G])b/, '$1♭');
 fetch('/api/chart').then(r => r.json()).then(chart => {
   $('legend').innerHTML = chart.map(c =>
-    `<div><span>${pretty(c.note)}</span><div class="staff">${c.svg}</div><b>${c.fingering}</b></div>`).join('');
+    `<div${c.names.length > 1 ? ' class="pair"' : ''}><span>${c.names.map(pretty).join(' / ')}</span><div class="staff">${c.svg}</div><b>${c.fingering}</b></div>`).join('');
 }).catch(() => { $('legend').textContent = 'The fingering chart could not be loaded.'; });
 </script>
 </body>

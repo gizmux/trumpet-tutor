@@ -84,12 +84,24 @@ def render_svg(xml_text: str) -> list[str]:
     return [tk.renderToSVG(p) for p in range(1, tk.getPageCount() + 1)]
 
 
-def note_svg(midi: int) -> str:
-    """One whole note on a treble staff, all drawn at the same size."""
-    name = name_of(midi)
+# Each black-key note has two names (F# = Gb); the chart shows both spellings.
+SPELLINGS = {1: ("C#", "Db"), 3: ("D#", "Eb"), 6: ("F#", "Gb"), 8: ("G#", "Ab"), 10: ("A#", "Bb")}
+
+
+def spellings(midi: int) -> list[str]:
+    octave = midi // 12 - 1
+    names = SPELLINGS.get(midi % 12)
+    return [f"{n}{octave}" for n in names] if names else [name_of(midi)]
+
+
+def to_abc(name: str) -> str:
     letter, octave = name[0], int(name[-1])
     accidental = {"#": "^", "b": "_"}.get(name[1:-1], "")
-    abc = accidental + (letter.lower() if octave >= 5 else letter) + "'" * max(0, octave - 5) + "," * max(0, 4 - octave)
+    return accidental + (letter.lower() if octave >= 5 else letter) + "'" * max(0, octave - 5) + "," * max(0, 4 - octave)
+
+
+def notes_svg(names: list[str]) -> str:
+    """Whole notes on a treble staff, all drawn at the same height."""
     tk = verovio.toolkit(False)
     tk.setResourcePath(str(Path(verovio.__file__).parent / "data"))
     tk.setOptions({
@@ -105,7 +117,7 @@ def note_svg(midi: int) -> str:
         "footer": "none",
         "svgViewBox": True,
     })
-    tk.loadData(f"X:1\nT:\nL:1\nK:C\n{abc}|\n")
+    tk.loadData(f"X:1\nT:\nL:1\nK:C\n{' | '.join(to_abc(n) for n in names)}|\n")
     return tk.renderToSVG(1)
 
 
@@ -114,10 +126,11 @@ _chart = None
 
 @app.get("/api/chart")
 def chart():
-    """The fingering chart: note name, fingering and the note on a staff."""
+    """The fingering chart: note name(s), the note on a staff, and its fingering."""
     global _chart
     if _chart is None:
-        _chart = [{"note": name_of(m), "fingering": f, "svg": note_svg(m)} for m, f in sorted(FINGERINGS.items())]
+        _chart = [{"names": spellings(m), "fingering": f, "svg": notes_svg(spellings(m))}
+                  for m, f in sorted(FINGERINGS.items())]
     return _chart
 
 
