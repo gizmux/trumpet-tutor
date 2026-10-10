@@ -135,4 +135,5 @@ def job_status(job_id: str):
 
 @app.get("/")
 def index():
-    return FileResponse(HERE / "static" / "index.html")
+    # No caching, so a browser never runs an old page against a newer server.
+    return FileResponse(HERE / "static" / "index.html", headers={"Cache-Control": "no-store"})
