@@ -26,6 +26,7 @@ from accidentals import add_accidentals
 from beaming import add_beams
 from fingering import FINGERINGS, TRANSPOSE, annotate_musicxml, name_of
 from pieces import split_pieces
+from rhythm import fix_stray_dots
 
 HERE = Path(__file__).parent
 app = FastAPI(title="Trumpet Tutor")
@@ -55,8 +56,9 @@ def recognize(image: Path) -> list[str]:
 
 
 def tidy(xml_text: str) -> str:
-    """Beam the short notes, mark accidentals, and name the part for trumpet."""
+    """Fix stray dots, beam the short notes, mark accidentals, name the part."""
     root = ET.fromstring(xml_text)
+    fix_stray_dots(root)
     add_beams(root)
     add_accidentals(root)
     for name in root.iter("part-name"):
