@@ -21,7 +21,18 @@ the B♭ trumpet valve fingering above every note.
 4. **Draw the score**: [Verovio](https://www.verovio.org) engraves the
    annotated MusicXML as SVG, keeping the original's line breaks, shown in the browser and printable.
 
-## Run it
+## Run it on GitHub (no install)
+
+1. On the repo page, click **Code → Codespaces → Create codespace on main**.
+2. Wait for setup to finish the first time (it installs everything and downloads
+   the note-reading models, a few minutes).
+3. The app opens in a new browser tab. If it doesn't, open the **Ports** tab
+   and click the globe icon next to port 8000.
+
+Stop the codespace when you're done (github.com/codespaces) so it doesn't use
+up your free monthly hours.
+
+## Run it on your own computer
 
 Needs Python 3.11+ and `pdftoppm` (poppler-utils) for PDF uploads.
 
