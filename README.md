@@ -10,15 +10,19 @@ the B♭ trumpet valve fingering above every note.
 1. **Read the notes**: [homr](https://github.com/liebharc/homr), an open-source
    optical music recognition (OMR) engine, turns the image into MusicXML. It
    handles phone photos (tilt, uneven light) and takes ~15–30 s per page on a CPU.
-2. **Add fingerings**: `app/fingering.py` maps each written pitch (F♯3 to C6)
+2. **Split into pieces**: a page with several tunes is cut into one score
+   per tune where the gap between staves is much bigger than usual
+   (`app/pieces.py`), and each title is read from the page with OCR. The app
+   lets you pick which pieces to show and print.
+3. **Add fingerings**: `app/fingering.py` maps each written pitch (F♯3 to C6)
    to its standard valve combination and inserts it as a MusicXML `<fingering>`
    above the note. A "concert pitch" option transposes up a whole step first,
    for music written for piano, flute or voice.
-3. **Beam the short notes**: homr gives note values but not beams, so
+4. **Beam the short notes**: homr gives note values but not beams, so
    `app/beaming.py` rebuilds them the way engravers group them: one group per
    beat (crotchet beats in 2/4, 3/4, 4/4, 2/2; dotted crotchets in 6/8, 9/8,
    12/8), with semiquaver stubs next to dotted quavers.
-4. **Draw the score**: [Verovio](https://www.verovio.org) engraves the
+5. **Draw the score**: [Verovio](https://www.verovio.org) engraves the
    annotated MusicXML as SVG, keeping the original's line breaks, shown in the browser and printable.
 
 ## Run it on GitHub (no install)

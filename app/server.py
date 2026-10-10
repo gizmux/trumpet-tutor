@@ -4,6 +4,7 @@ Upload a photo (or PDF) of trumpet sheet music; get back the score re-engraved
 with the valve fingering above every note.
 
 Pipeline: image -> homr (optical music recognition) -> MusicXML
+          -> pieces.split_pieces (one score per tune on the page)
           -> fingering.annotate_musicxml -> Verovio -> SVG
 """
 
@@ -23,6 +24,7 @@ from PIL import Image, ImageOps
 
 from beaming import add_beams
 from fingering import TRANSPOSE, annotate_musicxml
+from pieces import split_pieces
 
 HERE = Path(__file__).parent
 app = FastAPI(title="Trumpet Tutor")
@@ -40,14 +42,15 @@ def to_page_images(upload: Path, workdir: Path) -> list[Path]:
     return [out]
 
 
-def recognize(image: Path) -> str:
-    """Run homr on one image and return the MusicXML it wrote."""
-    result = subprocess.run(["homr", str(image)], capture_output=True, text=True, cwd=image.parent)
+def recognize(image: Path) -> list[str]:
+    """Run homr on one page image and return MusicXML for each piece on it."""
+    result = subprocess.run(["homr", "--write-staff-positions", str(image)],
+                            capture_output=True, text=True, cwd=image.parent)
     xml_path = image.with_suffix(".musicxml")
     if result.returncode != 0 or not xml_path.exists():
         raise HTTPException(422, "Couldn't find any music staves in that image. "
                                  "Try a sharper, straighter photo with the page filling the frame.")
-    return xml_path.read_text()
+    return split_pieces(xml_path.read_text(), image, image.with_suffix(".txt"))
 
 
 def tidy(xml_text: str) -> str:
@@ -89,12 +92,15 @@ def run_job(job_id: str, upload: Path, mode: str) -> None:
     job = jobs[job_id]
     try:
         images = to_page_images(upload, upload.parent)
-        pages = []
+        pieces = []
         for n, image in enumerate(images, 1):
             job["progress"] = f"Reading page {n} of {len(images)}"
-            xml, notes = annotate_musicxml(tidy(recognize(image)), mode)
-            pages.append({"musicxml": xml, "svg": render_svg(xml), "notes": notes})
-        job.update(status="done", pages=pages)
+            for piece in recognize(image):
+                xml, notes = annotate_musicxml(tidy(piece), mode)
+                title = ET.fromstring(xml).findtext("work/work-title") or f"Piece {len(pieces) + 1}"
+                pieces.append({"title": title, "page": n, "musicxml": xml,
+                               "svg": render_svg(xml), "notes": notes})
+        job.update(status="done", pieces=pieces)
     except HTTPException as e:
         job.update(status="error", detail=e.detail)
     except Exception as e:

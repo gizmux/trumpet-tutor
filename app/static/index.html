@@ -26,6 +26,8 @@
   .legend div { border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; text-align: center; }
   .legend b { display: block; font-size: 18px; }
   .warn { color: var(--warn); font-size: 14px; }
+  .pick { display: flex; gap: 6px; align-items: center; }
+  .piece { break-after: page; }
   @media print { .no-print { display: none; } .card { border: 0; padding: 0; } body { background: #fff; } }
 </style>
 </head>
@@ -103,7 +105,7 @@ $('go').addEventListener('click', async () => {
       if (data.progress) $('status').textContent = data.progress + '… about half a minute per page.';
     } while (data.status === 'working');
     if (data.status === 'error') throw new Error(data.detail);
-    showResults(data.pages);
+    showResults(data.pieces);
     $('status').textContent = '';
   } catch (err) {
     $('status').className = 'error';
@@ -126,26 +128,55 @@ async function call(url, options) {
   return data;
 }
 
-function showResults(pages) {
-  pages.forEach((page, i) => {
+function showResults(pieces) {
+  // With several pieces, let the reader pick which ones to show and print.
+  if (pieces.length > 1) {
+    const picker = document.createElement('div');
+    picker.className = 'card no-print';
+    picker.innerHTML = `<b>${pieces.length} pieces found.</b> Choose which to show and print:
+      <div class="row">${pieces.map((p, i) =>
+        `<label class="pick"><input type="checkbox" data-piece="${i}" checked> ${escapeHtml(p.title)}</label>`).join('')}</div>`;
+    picker.addEventListener('change', e => {
+      const box = e.target.closest('input[data-piece]');
+      if (box) $('piece-' + box.dataset.piece).hidden = !box.checked;
+    });
+    $('results').appendChild(picker);
+  }
+  pieces.forEach((piece, i) => {
     const card = document.createElement('div');
-    card.className = 'card';
-    const out = page.notes.filter(n => !n.in_range);
+    card.className = 'card piece';
+    card.id = 'piece-' + i;
+    const out = piece.notes.filter(n => !n.in_range);
     const warn = out.length
       ? `<p class="warn">${out.length} note(s) are outside the normal trumpet range and are marked “?”: ${out.map(n => n.note + ' (bar ' + n.measure + ')').join(', ')}.</p>`
       : '';
-    const blob = new Blob([page.musicxml], { type: 'application/vnd.recordare.musicxml+xml' });
+    const blob = new Blob([piece.musicxml], { type: 'application/vnd.recordare.musicxml+xml' });
+    const filename = piece.title.replace(/[^A-Za-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'fingerings';
     card.innerHTML = `
-      ${pages.length > 1 ? `<h3>Page ${i + 1}</h3>` : ''}
-      <div class="score">${page.svg.join('')}</div>
+      <div class="score">${piece.svg.join('')}</div>
       ${warn}
       <div class="row no-print">
-        <span class="status">${page.notes.length} notes found. Check them against your original; photo reading can make mistakes.</span>
-        <a download="fingerings.musicxml" href="${URL.createObjectURL(blob)}"><button>Download MusicXML</button></a>
-        <button onclick="window.print()">Print</button>
+        <span class="status">${piece.notes.length} notes found. Check them against your original; photo reading can make mistakes.</span>
+        <a download="${filename}.musicxml" href="${URL.createObjectURL(blob)}"><button>Download MusicXML</button></a>
+        <button data-print="${i}">Print this piece</button>
       </div>`;
+    card.querySelector('[data-print]').addEventListener('click', () => printOnly(card));
     $('results').appendChild(card);
   });
+}
+
+// Print a single piece by briefly hiding the others.
+function printOnly(card) {
+  const hidden = [...document.querySelectorAll('.piece')].filter(c => c !== card && !c.hidden);
+  hidden.forEach(c => c.hidden = true);
+  window.print();
+  hidden.forEach(c => c.hidden = false);
+}
+
+function escapeHtml(text) {
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
 }
 
 // Fingering chart for the legend (written pitch, B-flat trumpet).
