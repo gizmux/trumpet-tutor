@@ -1,0 +1,6 @@
+homr==0.7.0
+verovio==6.3.0
+fastapi
+uvicorn
+python-multipart
+pillow

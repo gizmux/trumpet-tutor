@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Trumpet Tutor</title>
+<style>
+  :root { --bg:#faf7f2; --card:#fff; --ink:#1d1b18; --muted:#6b645a; --accent:#b8860b; --line:#e6dfd3; --warn:#b3261e; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:16px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width: 1100px; margin: 0 auto; padding: 24px 16px 64px; }
+  h1 { margin: 0 0 4px; font-size: 28px; }
+  .sub { color: var(--muted); margin: 0 0 24px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 20px; margin-bottom: 20px; }
+  .drop { display: block; border: 2px dashed var(--line); border-radius: 10px; padding: 32px 16px; text-align: center; cursor: pointer; }
+  .drop.over { border-color: var(--accent); background: #fffaf0; }
+  .drop img { max-width: 100%; max-height: 260px; border-radius: 6px; margin-top: 12px; }
+  .row { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; margin-top: 16px; }
+  select, button { font: inherit; padding: 10px 14px; border-radius: 8px; border: 1px solid var(--line); background: #fff; }
+  button.primary { background: var(--accent); color: #fff; border-color: var(--accent); font-weight: 600; cursor: pointer; }
+  button:disabled { opacity: .5; cursor: default; }
+  .status { color: var(--muted); }
+  .error { color: var(--warn); }
+  .score svg { width: 100%; height: auto; }
+  .legend { display: grid; grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); gap: 8px; font-size: 14px; }
+  .legend div { border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; text-align: center; }
+  .legend b { display: block; font-size: 18px; }
+  .warn { color: var(--warn); font-size: 14px; }
+  @media print { .no-print { display: none; } .card { border: 0; padding: 0; } body { background: #fff; } }
+</style>
+</head>
+<body>
+<main>
+  <div class="no-print">
+    <h1>🎺 Trumpet Tutor</h1>
+    <p class="sub">Take a photo of your trumpet music. We'll write the valve fingering above every note.</p>
+
+    <div class="card">
+      <label class="drop" id="drop">
+        <input type="file" id="file" accept="image/*,application/pdf" hidden>
+        <div id="dropText"><b>Tap to take a photo or choose a file</b><br><span class="status">or drag one here (JPG, PNG or PDF)</span></div>
+        <img id="preview" hidden alt="Your sheet music">
+      </label>
+      <div class="row">
+        <label>This music is written for
+          <select id="mode">
+            <option value="bb_trumpet">B♭ trumpet (most trumpet music)</option>
+            <option value="concert">Concert pitch (piano, flute, voice…)</option>
+          </select>
+        </label>
+        <button class="primary" id="go" disabled>Add fingerings</button>
+        <span id="status" class="status"></span>
+      </div>
+    </div>
+  </div>
+
+  <div id="results"></div>
+
+  <div class="card no-print">
+    <h3 style="margin-top:0">How to read the numbers</h3>
+    <p class="status" style="margin-top:0">Valve 1 is nearest your face. <b>0</b> means play it open, no valves. <b>13</b> means press valves 1 and 3 together.</p>
+    <div class="legend" id="legend"></div>
+  </div>
+</main>
+
+<script>
+const $ = id => document.getElementById(id);
+let chosen = null;
+
+function choose(file) {
+  if (!file) return;
+  chosen = file;
+  $('go').disabled = false;
+  $('dropText').innerHTML = `<b>${file.name}</b><br><span class="status">Tap to pick a different one</span>`;
+  if (file.type.startsWith('image/')) {
+    $('preview').src = URL.createObjectURL(file);
+    $('preview').hidden = false;
+  } else {
+    $('preview').hidden = true;
+  }
+}
+
+$('file').addEventListener('change', e => choose(e.target.files[0]));
+const drop = $('drop');
+drop.addEventListener('dragover', e => { e.preventDefault(); drop.classList.add('over'); });
+drop.addEventListener('dragleave', () => drop.classList.remove('over'));
+drop.addEventListener('drop', e => { e.preventDefault(); drop.classList.remove('over'); choose(e.dataTransfer.files[0]); });
+
+$('go').addEventListener('click', async () => {
+  $('go').disabled = true;
+  $('status').className = 'status';
+  $('status').textContent = 'Reading the notes… this takes about half a minute per page.';
+  $('results').innerHTML = '';
+  const body = new FormData();
+  body.append('file', chosen);
+  body.append('mode', $('mode').value);
+  try {
+    const res = await fetch('/api/annotate', { method: 'POST', body });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'Something went wrong.');
+    showResults(data.pages);
+    $('status').textContent = '';
+  } catch (err) {
+    $('status').className = 'error';
+    $('status').textContent = err.message;
+  } finally {
+    $('go').disabled = false;
+  }
+});
+
+function showResults(pages) {
+  pages.forEach((page, i) => {
+    const card = document.createElement('div');
+    card.className = 'card';
+    const out = page.notes.filter(n => !n.in_range);
+    const warn = out.length
+      ? `<p class="warn">${out.length} note(s) are outside the normal trumpet range and are marked “?”: ${out.map(n => n.note + ' (bar ' + n.measure + ')').join(', ')}.</p>`
+      : '';
+    const blob = new Blob([page.musicxml], { type: 'application/vnd.recordare.musicxml+xml' });
+    card.innerHTML = `
+      ${pages.length > 1 ? `<h3>Page ${i + 1}</h3>` : ''}
+      <div class="score">${page.svg.join('')}</div>
+      ${warn}
+      <div class="row no-print">
+        <span class="status">${page.notes.length} notes found. Check them against your original; photo reading can make mistakes.</span>
+        <a download="fingerings.musicxml" href="${URL.createObjectURL(blob)}"><button>Download MusicXML</button></a>
+        <button onclick="window.print()">Print</button>
+      </div>`;
+    $('results').appendChild(card);
+  });
+}
+
+// Fingering chart for the legend (written pitch, B-flat trumpet).
+const chart = [
+  ['F♯3','123'],['G3','13'],['A♭3','23'],['A3','12'],['B♭3','1'],['B3','2'],['C4','0'],
+  ['C♯4','123'],['D4','13'],['E♭4','23'],['E4','12'],['F4','1'],['F♯4','2'],['G4','0'],
+  ['A♭4','23'],['A4','12'],['B♭4','1'],['B4','2'],['C5','0'],['C♯5','12'],['D5','1'],
+  ['E♭5','2'],['E5','0'],['F5','1'],['F♯5','2'],['G5','0'],['A♭5','23'],['A5','12'],
+  ['B♭5','1'],['B5','2'],['C6','0'],
+];
+$('legend').innerHTML = chart.map(([n, f]) => `<div>${n}<b>${f}</b></div>`).join('');
+</script>
+</body>
+</html>
