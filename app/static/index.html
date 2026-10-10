@@ -95,9 +95,14 @@ $('go').addEventListener('click', async () => {
   body.append('file', chosen);
   body.append('mode', $('mode').value);
   try {
-    const res = await fetch('/api/annotate', { method: 'POST', body });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.detail || 'Something went wrong.');
+    const { job } = await call('/api/annotate', { method: 'POST', body });
+    let data;
+    do {
+      await new Promise(r => setTimeout(r, 2000));
+      data = await call(`/api/jobs/${job}`);
+      if (data.progress) $('status').textContent = data.progress + '… about half a minute per page.';
+    } while (data.status === 'working');
+    if (data.status === 'error') throw new Error(data.detail);
     showResults(data.pages);
     $('status').textContent = '';
   } catch (err) {
@@ -107,6 +112,19 @@ $('go').addEventListener('click', async () => {
     $('go').disabled = false;
   }
 });
+
+// fetch() that always gives a readable error, even when the reply isn't JSON.
+async function call(url, options) {
+  const res = await fetch(url, options);
+  const text = await res.text();
+  let data = null;
+  try { data = JSON.parse(text); } catch {}
+  if (!res.ok || data === null) {
+    throw new Error((data && data.detail) ||
+      `The server didn't answer properly (HTTP ${res.status}${text ? ': ' + text.slice(0, 120) : ', empty reply'}). Check the server terminal for errors.`);
+  }
+  return data;
+}
 
 function showResults(pages) {
   pages.forEach((page, i) => {

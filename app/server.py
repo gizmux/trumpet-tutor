@@ -7,9 +7,12 @@ Pipeline: image -> homr (optical music recognition) -> MusicXML
           -> fingering.annotate_musicxml -> Verovio -> SVG
 """
 
+import logging
 import shutil
 import subprocess
 import tempfile
+import threading
+import uuid
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
@@ -23,6 +26,7 @@ from fingering import TRANSPOSE, annotate_musicxml
 
 HERE = Path(__file__).parent
 app = FastAPI(title="Trumpet Tutor")
+log = logging.getLogger("uvicorn.error")
 
 
 def to_page_images(upload: Path, workdir: Path) -> list[Path]:
@@ -75,21 +79,52 @@ def render_svg(xml_text: str) -> list[str]:
     return [tk.renderToSVG(p) for p in range(1, tk.getPageCount() + 1)]
 
 
+# Jobs run in the background and the browser polls for the result, so a slow
+# page never holds one HTTP request open long enough for a proxy (such as
+# GitHub Codespaces port forwarding) to cut it off.
+jobs: dict[str, dict] = {}
+
+
+def run_job(job_id: str, upload: Path, mode: str) -> None:
+    job = jobs[job_id]
+    try:
+        images = to_page_images(upload, upload.parent)
+        pages = []
+        for n, image in enumerate(images, 1):
+            job["progress"] = f"Reading page {n} of {len(images)}"
+            xml, notes = annotate_musicxml(tidy(recognize(image)), mode)
+            pages.append({"musicxml": xml, "svg": render_svg(xml), "notes": notes})
+        job.update(status="done", pages=pages)
+    except HTTPException as e:
+        job.update(status="error", detail=e.detail)
+    except Exception as e:
+        log.exception("Job %s failed", job_id)
+        job.update(status="error", detail=f"Something went wrong on the server: {e}")
+    finally:
+        shutil.rmtree(upload.parent, ignore_errors=True)
+
+
 @app.post("/api/annotate")
 def annotate(file: UploadFile = File(...), mode: str = Form("bb_trumpet")):
     if mode not in TRANSPOSE:
         raise HTTPException(400, f"mode must be one of {list(TRANSPOSE)}")
     workdir = Path(tempfile.mkdtemp(prefix="trumpet-"))
-    try:
-        upload = workdir / ("upload" + Path(file.filename or "x.png").suffix.lower())
-        upload.write_bytes(file.file.read())
-        pages = []
-        for image in to_page_images(upload, workdir):
-            xml, notes = annotate_musicxml(tidy(recognize(image)), mode)
-            pages.append({"musicxml": xml, "svg": render_svg(xml), "notes": notes})
-        return {"pages": pages}
-    finally:
-        shutil.rmtree(workdir, ignore_errors=True)
+    upload = workdir / ("upload" + Path(file.filename or "x.png").suffix.lower())
+    upload.write_bytes(file.file.read())
+    job_id = uuid.uuid4().hex
+    jobs[job_id] = {"status": "working", "progress": "Starting"}
+    threading.Thread(target=run_job, args=(job_id, upload, mode), daemon=True).start()
+    return {"job": job_id}
+
+
+@app.get("/api/jobs/{job_id}")
+def job_status(job_id: str):
+    job = jobs.get(job_id)
+    if job is None:
+        raise HTTPException(404, "That job no longer exists. The server may have restarted; please try again.")
+    if job["status"] != "working":
+        jobs.pop(job_id)
+    return job
 
 
 @app.get("/")
